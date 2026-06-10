@@ -16,13 +16,9 @@
 #include <NetworkClient.h>
 #include <WiFiAP.h>
 
-#ifndef LED_BUILTIN
-#define LED_BUILTIN 2  // Set the GPIO pin where you connected your test LED or comment this line out if your dev board has a built-in LED
-#endif
-
 // Set these to your desired credentials.
-const char *ssid = "yourAP";
-const char *password = "yourPassword";
+const char *ssid = "lora32";
+const char *password = "testing246";
 
 NetworkServer server(80);
 
@@ -69,8 +65,7 @@ void loop() {
             client.println();
 
             // the content of the HTTP response follows the header:
-            client.print("Click <a href=\"/H\">here</a> to turn ON the LED.<br>");
-            client.print("Click <a href=\"/L\">here</a> to turn OFF the LED.<br>");
+            client.print("Hello, World!");
 
             // The HTTP response ends with another blank line:
             client.println();
@@ -83,13 +78,6 @@ void loop() {
           currentLine += c;      // add it to the end of the currentLine
         }
 
-        // Check to see if the client request was "GET /H" or "GET /L":
-        if (currentLine.endsWith("GET /H")) {
-          digitalWrite(LED_BUILTIN, HIGH);  // GET /H turns the LED on
-        }
-        if (currentLine.endsWith("GET /L")) {
-          digitalWrite(LED_BUILTIN, LOW);  // GET /L turns the LED off
-        }
       }
     }
     // close the connection:
