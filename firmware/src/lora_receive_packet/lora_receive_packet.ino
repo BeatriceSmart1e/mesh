@@ -1,17 +1,18 @@
 #include <Arduino.h>
 #include <SPI.h>
-#include <LoRa.h>
+#include <RadioLib.h> // changed to radiolib as it will be better for the long term, it is a much better library.
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-// hardware pins
+// hardware pins (ttgo lora32)
 #define LORA_SCK 5
 #define LORA_MISO 19
 #define LORA_MOSI 27
 #define LORA_CS 18
 #define LORA_RST 23
 #define LORA_DIO0 26
+#define LORA_DIO1 33 // specifically for RadioLib, defined for SX1276 tracking
 
 // oled pins
 #define SCREEN_WIDTH 128
@@ -22,6 +23,9 @@
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RST);
 const uint8_t NODE_ID = 2;
+
+// init of radiolib object
+SX1276 radio = new Module(LORA_CS, LORA_DIO0, LORA_RST, LORA_DIO1);
 
 struct LoRaPacket {
   uint8_t senderID;
@@ -49,71 +53,97 @@ void setup() {
 
   Serial.println("LoRa Receiver");
 
+  // init of hardware spi pins
   SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
-  LoRa.setPins(LORA_CS, LORA_RST, LORA_DIO0);
 
-  if (!LoRa.begin(915E6)) {
-    Serial.println("Starting LoRa failed!");
+  // init of radiolib - change frequency if needs be
+  Serial.print(F("[SX1276] Initializing ... "));
+  int state = radio.begin(915.0); // starting at default of 915MHz
+  
+  if (state == RADIOLIB_ERR_NONE) {
+    Serial.println(F("success!"));
+
+    // configuring handshake
+    int syncState = radio.setSyncWord(0x12); 
+    if (syncState != RADIOLIB_ERR_NONE) {
+        Serial.println("Failed to set sync word!");
+    }
+  
+    radio.setBandwidth(125.0); // 125 kHz
+    radio.setSpreadingFactor(7); // SF7
+    radio.setCodingRate(5);    // CR 4/5
+    radio.invertIQ(false);
+
+    radio.startReceive();
+    
+    display.clearDisplay();
+    display.setCursor(0,0);
+    display.println("Ready to Receive!");
+    display.display();
+  }
+  else {
+    Serial.print(F("failed, code "));
+    Serial.println(state);
     display.clearDisplay();
     display.setCursor(0, 0);
-    display.println("LoRa Init Failed!");
+    display.print("LoRa Init Failed: ");
+    display.println(state);
     display.display();
     while (1);
   }
-
-  Serial.println("LoRa successfully initialized!");
-  display.clearDisplay();
-  display.setCursor(0,0);
-  display.println("Ready to Receive!");
-  display.display();
   delay(1500);
   
 }
 
 void loop() {
-  int p_sz = LoRa.parsePacket();
+  // temporary packet for parsing it
+  LoRaPacket incomingPacket;
 
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  
-  display.setTextSize(1);
-  display.println("--- LORA STATUS ---");
-  display.println("");
+  int state = radio.readData((uint8_t*)&incomingPacket,sizeof(LoRaPacket));
 
-  if (p_sz>0) {
-    if (p_sz==sizeof(LoRaPacket)) {
-      LoRaPacket incomingPacket;
-      LoRa.readBytes((uint8_t*)&incomingPacket, sizeof(LoRaPacket));
-      // we treat targetID=0 as a global ID - i.e. everyone is supposed to receive this message.
-      if (incomingPacket.targetID == NODE_ID || incomingPacket.targetID == 0) {
-        Serial.println("--- NEW PACKET RECEIVED ---");
-        Serial.print("From Node: "); Serial.println(incomingPacket.senderID);
-        Serial.print("To Node:   "); Serial.println(incomingPacket.targetID);
-        Serial.print("Msg Seq #: "); Serial.println(incomingPacket.messageID);
-        Serial.print("Payload:   "); Serial.println(incomingPacket.payload);
-        Serial.println("---------------------------\n");
+  if (state == RADIOLIB_ERR_NONE) {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.setTextSize(1);
+    display.println("--- LORA STATUS ---");
+    display.println("");
 
-        display.println("NEW PACKET RECEIVED!");
-        display.print("From Node: "); display.println(incomingPacket.senderID);
-        display.print("To Node:   "); display.println(incomingPacket.targetID);
-        display.print("Msg Seq #: "); display.println(incomingPacket.messageID);
-        display.print("Payload:   "); display.println(incomingPacket.payload);
-        display.display();
-      }
-      else {
-        Serial.print("Packet ignored. Meant for Node: ");
-        Serial.println(incomingPacket.targetID);
+    if (incomingPacket.targetID == NODE_ID || incomingPacket.targetID==0) {
+      Serial.println("--- NEW PACKET RECEIVED ---");
+      Serial.print("From Node: "); Serial.println(incomingPacket.senderID);
+      Serial.print("To Node:   "); Serial.println(incomingPacket.targetID);
+      Serial.print("Msg Seq #: "); Serial.println(incomingPacket.messageID);
+      Serial.print("Payload:   "); Serial.println(incomingPacket.payload);
+      Serial.println("---------------------------\n");
 
-        display.print("Packet ignored. Meant for Node: ");
-        display.println(incomingPacket.targetID);
-        display.display();
-      }
-    }
-    else {
-      Serial.println("Error: Received packet, but does not match correct struct size. Unknown sender's packet was received.");
-      display.println("Error: Received packet, but does not match correct struct size. Unknown sender's packet was received.");
+      display.println("NEW PACKET RECEIVED!");
+      display.print("From Node: "); display.println(incomingPacket.senderID);
+      display.print("To Node:   "); display.println(incomingPacket.targetID);
+      display.print("Msg Seq #: "); display.println(incomingPacket.messageID);
+      display.print("Payload:   "); display.println(incomingPacket.payload);
       display.display();
     }
+    else {
+      Serial.print("Packet ignored. Meant for Node: ");
+      Serial.println(incomingPacket.targetID);
+
+      display.print("Packet ignored.\nMeant for Node: ");
+      display.println(incomingPacket.targetID);
+      display.display();
+    }
+    radio.startReceive();
+  }
+  else if (state==RADIOLIB_ERR_CRC_MISMATCH || state==RADIOLIB_ERR_PACKET_TOO_LONG) { // if data is corrupt/invalid
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println("--- LORA STATUS ---\n");
+    
+    Serial.println("Error: Corrupt packet or layout size mismatch.");
+    display.println("Error: Received bad data or structure mismatch.");
+    display.display();
+    radio.startReceive();
   }
 
+  delay(10); // best to add delay at the end for a cooldown
+  
 }

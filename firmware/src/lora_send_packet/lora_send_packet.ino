@@ -1,17 +1,18 @@
 #include <Arduino.h>
 #include <SPI.h>
-#include <LoRa.h>
+#include <RadioLib.h> // changed to radiolib as it will be better for the long term, it is a much better library.
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-// hardware pins
+// hardware pins (ttgo lora32)
 #define LORA_SCK 5
 #define LORA_MISO 19
 #define LORA_MOSI 27
 #define LORA_CS 18
 #define LORA_RST 23
 #define LORA_DIO0 26
+#define LORA_DIO1 33 // specifically for RadioLib, defined for SX1276 tracking
 
 // oled pins
 #define SCREEN_WIDTH 128
@@ -24,6 +25,9 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RST);
 const uint8_t NODE_ID = 1; 
 uint8_t msgCnt = 0;
 
+// init of radiolib object
+SX1276 radio = new Module(LORA_CS, LORA_DIO0, LORA_RST, LORA_DIO1);
+
 struct LoRaPacket {
   uint8_t senderID;
   uint8_t targetID;
@@ -32,7 +36,7 @@ struct LoRaPacket {
 };
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
   while (!Serial);
 
   Wire.begin(OLED_SDA, OLED_SCL);
@@ -50,17 +54,44 @@ void setup() {
 
   Serial.println("LoRa Sender");
 
+  // init of hardware spi pins
   SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
-  LoRa.setPins(LORA_CS, LORA_RST, LORA_DIO0);
 
-  if (!LoRa.begin(915E6)) {
-    Serial.println("Starting LoRa failed!");
+  // init of radiolib - change frequency if needs be
+  Serial.print(F("[SX1276] Initializing ... "));
+  int state = radio.begin(915.0); // starting at default of 915MHz
+  
+  if (state == RADIOLIB_ERR_NONE) {
+    Serial.println(F("success!"));
+
+    // configuring handshake
+    int syncState = radio.setSyncWord(0x12); 
+    if (syncState != RADIOLIB_ERR_NONE) {
+        Serial.println("Failed to set sync word!");
+    }
+
+    radio.setBandwidth(125.0); // 125 kHz
+    radio.setSpreadingFactor(7); // SF7
+    radio.setCodingRate(5);    // CR 4/5
+    // radio.setPreambleLength(8); // this line is only needed when trying to send messages to modules using different library (e.g. radiolib to lora)
+    radio.invertIQ(false);
+    
+    display.clearDisplay();
+    display.setCursor(0,0);
+    display.println("Ready to Transmit!");
+    display.display();
+  }
+  else {
+    Serial.print(F("failed, code "));
+    Serial.println(state);
     display.clearDisplay();
     display.setCursor(0, 0);
-    display.println("LoRa Init Failed!");
+    display.print("LoRa Init Failed: ");
+    display.println(state);
     display.display();
     while (1);
   }
+  delay(1500);
 
 }
 
@@ -73,25 +104,35 @@ void loop() {
 
   strncpy(p.payload, "hello, world!", sizeof(p.payload)); // copies text to payload
 
-  LoRa.beginPacket();
-  LoRa.write((uint8_t*)&p, sizeof(p));
-  LoRa.endPacket();
+  int state = radio.transmit((uint8_t*)&p, sizeof(LoRaPacket));
 
   display.clearDisplay();
   display.setCursor(0, 0);
-  
   display.setTextSize(1);
-  display.println("--- LORA STATUS ---");
-  display.println("");
+  display.println("--- LORA STATUS ---\n");
+
+  if (state == RADIOLIB_ERR_NONE) {
+    Serial.print("Sent Packet ID: ");
+    Serial.println(p.messageID);
+
+    display.setTextSize(1);
+    display.print("Sent Packet ID: ");
+    display.println(p.messageID);
+    display.println("");
+    display.setTextSize(2);
+    display.print("Total: ");
+    display.println(msgCnt);
+  }
+  else {
+    Serial.print("Transmission error occurred: ");
+    Serial.println(state);
+
+    display.setTextSize(1);
+    display.print("TX Error Code: ");
+    display.println(state);
+  }
   
-  display.setTextSize(2);
-  display.print("Sent: #");
-  display.println(msgCnt);
   display.display();
-
-  Serial.print("Sent Packet ID: ");
-  Serial.println(p.messageID);
-
   delay(5000);
   
 }
