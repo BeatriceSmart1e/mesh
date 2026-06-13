@@ -31,9 +31,35 @@ SX1276 radio = new Module(LORA_CS, LORA_DIO0, LORA_RST, LORA_DIO1);
 struct LoRaPacket {
   uint8_t senderID;
   uint8_t targetID;
+  
   uint8_t messageID;
+
+  uint8_t hopCount;
+  uint8_t maxHops;
+  
+  uint8_t lastRepeater;
+  
   char payload[64]; // max message length in bytes
 };
+
+void printPacket(const LoRaPacket& p) {
+  Serial.println("------ TX PACKET ------");
+  Serial.print("From: ");
+  Serial.println(p.senderID);
+  Serial.print("To: ");
+  Serial.println(p.targetID);
+  Serial.print("MsgID: ");
+  Serial.println(p.messageID);
+  Serial.print("Hop: ");
+  Serial.println(p.hopCount);
+  Serial.print("MaxHop: ");
+  Serial.println(p.maxHops);
+  Serial.print("Via: ");
+  Serial.println(p.lastRepeater);
+  Serial.print("Payload: ");
+  Serial.println(p.payload);
+  Serial.println("-----------------------");
+}
 
 void setup() {
   Serial.begin(9600);
@@ -102,6 +128,11 @@ void loop() {
   p.targetID = 2; // sending to node 2
   p.messageID = msgCnt++;
 
+  p.hopCount = 0;
+  p.maxHops = 3; // you may tweak this number based on your network size.
+
+  p.lastRepeater = 0;
+
   strncpy(p.payload, "hello, world!", sizeof(p.payload)); // copies text to payload
 
   int state = radio.transmit((uint8_t*)&p, sizeof(LoRaPacket));
@@ -112,8 +143,7 @@ void loop() {
   display.println("--- LORA STATUS ---\n");
 
   if (state == RADIOLIB_ERR_NONE) {
-    Serial.print("Sent Packet ID: ");
-    Serial.println(p.messageID);
+    printPacket(p);
 
     display.setTextSize(1);
     display.print("Sent Packet ID: ");

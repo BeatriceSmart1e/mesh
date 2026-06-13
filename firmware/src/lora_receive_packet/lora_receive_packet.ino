@@ -21,18 +21,52 @@
 #define OLED_SCL 22
 #define OLED_RST -1 // -1 indicates to share the same reset pin as on the system
 
+struct LoRaPacket {
+  uint8_t senderID;
+  uint8_t targetID;
+  
+  uint8_t messageID;
+
+  uint8_t hopCount;
+  uint8_t maxHops;
+  
+  uint8_t lastRepeater;
+  
+  char payload[64]; // max message length in bytes
+};
+
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RST);
 const uint8_t NODE_ID = 2;
 
 // init of radiolib object
 SX1276 radio = new Module(LORA_CS, LORA_DIO0, LORA_RST, LORA_DIO1);
 
-struct LoRaPacket {
-  uint8_t senderID;
-  uint8_t targetID;
-  uint8_t messageID;
-  char payload[64]; // max message length in bytes
-};
+// interrupt callback
+volatile bool f = false;
+void setFlag(void) {
+  f = true;
+}
+
+void printPacket(const LoRaPacket& p, float rssii) { // rssi is helpful for debugging
+  Serial.println("------ RX PACKET ------");
+  Serial.print("From: ");
+  Serial.println(p.senderID);
+  Serial.print("To: ");
+  Serial.println(p.targetID);
+  Serial.print("MsgID: ");
+  Serial.println(p.messageID);
+  Serial.print("Hop: ");
+  Serial.println(p.hopCount);
+  Serial.print("MaxHop: ");
+  Serial.println(p.maxHops);
+  Serial.print("Via: ");
+  Serial.println(p.lastRepeater);
+  Serial.print("RSSI: ");
+  Serial.println(rssii);
+  Serial.print("Payload: ");
+  Serial.println(p.payload);
+  Serial.println("-----------------------");
+}
 
 void setup() {
   Serial.begin(9600);
@@ -74,6 +108,7 @@ void setup() {
     radio.setCodingRate(5);    // CR 4/5
     radio.invertIQ(false);
 
+    radio.setDio0Action(setFlag,RISING);
     radio.startReceive();
     
     display.clearDisplay();
@@ -95,13 +130,34 @@ void setup() {
   
 }
 
+int cnt=0; // this counter will help determine whether to clear screen after receiving message or not
 void loop() {
+  if (!f) {
+    if (cnt>=5) {
+      cnt=0;
+      display.clearDisplay();
+      display.setCursor(0, 0);
+      display.setTextSize(1);
+      display.println("--- LORA STATUS ---");
+      display.println("");
+      display.println("No new message received.");
+      display.display();
+    }
+    cnt++;
+    return;
+  }
+  noInterrupts();
+  f=false;
+  interrupts();
+  
   // temporary packet for parsing it
   LoRaPacket incomingPacket;
 
   int state = radio.readData((uint8_t*)&incomingPacket,sizeof(LoRaPacket));
 
   if (state == RADIOLIB_ERR_NONE) {
+    float rssii = radio.getRSSI();
+    
     display.clearDisplay();
     display.setCursor(0, 0);
     display.setTextSize(1);
@@ -109,17 +165,12 @@ void loop() {
     display.println("");
 
     if (incomingPacket.targetID == NODE_ID || incomingPacket.targetID==0) {
-      Serial.println("--- NEW PACKET RECEIVED ---");
-      Serial.print("From Node: "); Serial.println(incomingPacket.senderID);
-      Serial.print("To Node:   "); Serial.println(incomingPacket.targetID);
-      Serial.print("Msg Seq #: "); Serial.println(incomingPacket.messageID);
-      Serial.print("Payload:   "); Serial.println(incomingPacket.payload);
-      Serial.println("---------------------------\n");
+      printPacket(incomingPacket,rssii);
 
       display.println("NEW PACKET RECEIVED!");
       display.print("From Node: "); display.println(incomingPacket.senderID);
-      display.print("To Node:   "); display.println(incomingPacket.targetID);
-      display.print("Msg Seq #: "); display.println(incomingPacket.messageID);
+      display.print("Hop:   "); display.println(incomingPacket.hopCount);
+      display.print("RSSI: "); display.println((int)rssii);
       display.print("Payload:   "); display.println(incomingPacket.payload);
       display.display();
     }
@@ -141,9 +192,8 @@ void loop() {
     Serial.println("Error: Corrupt packet or layout size mismatch.");
     display.println("Error: Received bad data or structure mismatch.");
     display.display();
+
     radio.startReceive();
   }
-
-  delay(10); // best to add delay at the end for a cooldown
-  
+  delay(1000); // temporary delay, just to be able to read contents on screen. this will be improved later.
 }
