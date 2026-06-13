@@ -130,20 +130,22 @@ void setup() {
   
 }
 
-int cnt=0; // this counter will help determine whether to clear screen after receiving message or not
+unsigned long startDisplay = 0;
+bool showPacket = false;
 void loop() {
   if (!f) {
-    if (cnt>=5) {
-      cnt=0;
-      display.clearDisplay();
-      display.setCursor(0, 0);
-      display.setTextSize(1);
-      display.println("--- LORA STATUS ---");
-      display.println("");
-      display.println("No new message received.");
-      display.display();
+    if (showPacket) {
+      if (millis() - startDisplay >= 2000) {
+        showPacket = false;
+        display.clearDisplay();
+        display.setCursor(0, 0);
+        display.setTextSize(1);
+        display.println("--- LORA STATUS ---");
+        display.println("");
+        display.println("No new message received.");
+        display.display();
+      }
     }
-    cnt++;
     return;
   }
   noInterrupts();
@@ -157,6 +159,11 @@ void loop() {
 
   if (state == RADIOLIB_ERR_NONE) {
     float rssii = radio.getRSSI();
+    
+    if (!showPacket) {
+      showPacket = true;
+      startDisplay = millis();
+    }
     
     display.clearDisplay();
     display.setCursor(0, 0);
@@ -195,5 +202,16 @@ void loop() {
 
     radio.startReceive();
   }
-  delay(1000); // temporary delay, just to be able to read contents on screen. this will be improved later.
+  if (showPacket) {
+    if (millis() - startDisplay >= 2000) {
+      showPacket = false;
+      display.clearDisplay();
+      display.setCursor(0, 0);
+      display.setTextSize(1);
+      display.println("--- LORA STATUS ---");
+      display.println("");
+      display.println("No new message received.");
+      display.display();
+    }
+  }
 }
