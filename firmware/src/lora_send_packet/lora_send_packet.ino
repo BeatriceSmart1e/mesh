@@ -85,7 +85,7 @@ void setup() {
 
   // init of radiolib - change frequency if needs be
   Serial.print(F("[SX1276] Initializing ... "));
-  int state = radio.begin(915.0); // starting at default of 915MHz
+  int state = radio.begin(868.0); // starting at default of 868MHz
   
   if (state == RADIOLIB_ERR_NONE) {
     Serial.println(F("success!"));
