@@ -1,4 +1,4 @@
-# mesh
+# Project Cairn: a mesh network project
 A work-in-progress mesh network, used to help with communication and location tracking, without the need of an internet connection, let alone electricity.
 
 **Note:** So far, this project is configured specifically for the **TTGO LoRa32 v1.6.1 by LILYGO**. It is not guaranteed to work for other boards, as it has not been tested on other boards as of right now.
