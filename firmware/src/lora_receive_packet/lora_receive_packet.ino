@@ -148,6 +148,7 @@ void loop() {
     }
     return;
   }
+  // Serial.println("IRQ"); // DEBUG TO MONITOR IF TTGO RECEIVES ANYTHING
   noInterrupts();
   f=false;
   interrupts();
